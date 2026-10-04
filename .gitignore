@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist/
+*/dist/
+.vite/
+*.tsbuildinfo
+
+# Local data & uploads
+backend/uploads/
+backend/pgdata/
+backend/pgdata_store/
+uploads/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+.kilo/

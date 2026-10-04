@@ -1,5 +1,13 @@
 import { z } from "zod";
-import "dotenv/config";
+import * as dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import path from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// If running from src/ (ts-node/tsx), .env is in ../.env
+// If running from dist/ (node), .env is in ../.env
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const schema = z.object({
     NODE_ENV: z.string().default("development"),

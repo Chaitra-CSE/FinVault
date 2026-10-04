@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -37,7 +37,7 @@ enum StepDecision {
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id String @id @default(auto()) @map("_id") @db.ObjectId
   email        String   @unique
   name         String
   passwordHash String
@@ -55,9 +55,9 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   tokenHash String   @unique
   expiresAt DateTime
   revoked   Boolean  @default(false)
@@ -65,10 +65,10 @@ model RefreshToken {
 }
 
 model Folder {
-  id        String     @id @default(cuid())
+  id String @id @default(auto()) @map("_id") @db.ObjectId
   name      String
-  parentId  String?
-  parent    Folder?    @relation("FolderTree", fields: [parentId], references: [id])
+  parentId String? @db.ObjectId
+  parent    Folder?    @relation("FolderTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children  Folder[]   @relation("FolderTree")
   documents Document[]
   createdAt DateTime   @default(now())
@@ -77,18 +77,18 @@ model Folder {
 }
 
 model Document {
-  id               String        @id @default(cuid())
+  id String @id @default(auto()) @map("_id") @db.ObjectId
   title            String
   description      String?
   category         String // e.g., "invoice", "contract", "report"
   classification   String        @default("internal") // public|internal|confidential|restricted
   status           DocStatus     @default(DRAFT)
-  ownerId          String
+  ownerId String @db.ObjectId
   owner            User          @relation("OwnerDocs", fields: [ownerId], references: [id])
-  folderId         String?
-  folder           Folder?       @relation(fields: [folderId], references: [id])
-  currentVersionId String?       @unique
-  currentVersion   Version?      @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  folderId String? @db.ObjectId
+  folder           Folder?       @relation(fields: [folderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  currentVersionId String? @db.ObjectId       @unique
+  currentVersion   Version?      @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   versions         Version[]     @relation("DocVersions")
   acls             DocumentAcl[]
   workflows        Workflow[]
@@ -102,16 +102,16 @@ model Document {
 }
 
 model Version {
-  id           String    @id @default(cuid())
-  documentId   String
-  document     Document  @relation("DocVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  documentId String @db.ObjectId
+  document     Document  @relation("DocVersions", fields: [documentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   version      Int
   filename     String
   mimeType     String
   sizeBytes    Int
   sha256       String
   storageKey   String
-  uploadedById String
+  uploadedById String @db.ObjectId
   comment      String?
   createdAt    DateTime  @default(now())
   currentFor   Document? @relation("CurrentVersion")
@@ -121,15 +121,15 @@ model Version {
 }
 
 model DocumentAcl {
-  id          String   @id @default(cuid())
-  documentId  String
-  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  userId      String?
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  documentId String @db.ObjectId
+  document    Document @relation(fields: [documentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  userId String? @db.ObjectId
   user        User?    @relation(fields: [userId], references: [id])
   // role-based grant
   role        Role?
   permission  String // read|write|approve|admin
-  grantedById String
+  grantedById String @db.ObjectId
   createdAt   DateTime @default(now())
 
   @@unique([documentId, userId, permission])
@@ -137,34 +137,34 @@ model DocumentAcl {
 }
 
 model WorkflowTemplate {
-  id        String   @id @default(cuid())
+  id String @id @default(auto()) @map("_id") @db.ObjectId
   name      String   @unique
   steps     Json // [{order, name, role, requiredApprovals}]
   createdAt DateTime @default(now())
 }
 
 model Workflow {
-  id          String         @id @default(cuid())
-  documentId  String
-  document    Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  templateId  String?
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  documentId String @db.ObjectId
+  document    Document       @relation(fields: [documentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  templateId String? @db.ObjectId
   status      WorkflowStatus @default(PENDING)
-  startedById String
+  startedById String @db.ObjectId
   startedAt   DateTime       @default(now())
   completedAt DateTime?
   steps       WorkflowStep[]
 }
 
 model WorkflowStep {
-  id                String             @id @default(cuid())
-  workflowId        String
-  workflow          Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  workflowId String @db.ObjectId
+  workflow          Workflow           @relation(fields: [workflowId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   order             Int
   name              String
   role              Role
   requiredApprovals Int                @default(1)
   decision          StepDecision       @default(PENDING)
-  assigneeId        String?
+  assigneeId String? @db.ObjectId
   assignee          User?              @relation("Assignee", fields: [assigneeId], references: [id])
   decisionsList     WorkflowDecision[]
 
@@ -172,10 +172,10 @@ model WorkflowStep {
 }
 
 model WorkflowDecision {
-  id        String       @id @default(cuid())
-  stepId    String
-  step      WorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-  userId    String
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  stepId String @db.ObjectId
+  step      WorkflowStep @relation(fields: [stepId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  userId String @db.ObjectId
   user      User         @relation(fields: [userId], references: [id])
   decision  StepDecision
   comment   String?
@@ -183,12 +183,12 @@ model WorkflowDecision {
 }
 
 model AuditEvent {
-  id         String   @id @default(cuid())
-  actorId    String?
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  actorId String? @db.ObjectId
   actor      User?    @relation(fields: [actorId], references: [id])
   action     String // doc.create|doc.download|doc.delete|wf.approve|...
   targetType String
-  targetId   String
+  targetId String @db.ObjectId
   metadata   Json?
   ip         String?
   userAgent  String?
