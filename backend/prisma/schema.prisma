@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  AUDITOR
+  APPROVER
+  UPLOADER
+  VIEWER
+}
+
+enum DocStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum WorkflowStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum StepDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(VIEWER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  documents     Document[]         @relation("OwnerDocs")
+  acls          DocumentAcl[]
+  stepsAssigned WorkflowStep[]     @relation("Assignee")
+  decisions     WorkflowDecision[]
+  auditEvents   AuditEvent[]
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Folder {
+  id        String     @id @default(cuid())
+  name      String
+  parentId  String?
+  parent    Folder?    @relation("FolderTree", fields: [parentId], references: [id])
+  children  Folder[]   @relation("FolderTree")
+  documents Document[]
+  createdAt DateTime   @default(now())
+
+  @@unique([parentId, name])
+}
+
+model Document {
+  id               String        @id @default(cuid())
+  title            String
+  description      String?
+  category         String // e.g., "invoice", "contract", "report"
+  classification   String        @default("internal") // public|internal|confidential|restricted
+  status           DocStatus     @default(DRAFT)
+  ownerId          String
+  owner            User          @relation("OwnerDocs", fields: [ownerId], references: [id])
+  folderId         String?
+  folder           Folder?       @relation(fields: [folderId], references: [id])
+  currentVersionId String?       @unique
+  currentVersion   Version?      @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  versions         Version[]     @relation("DocVersions")
+  acls             DocumentAcl[]
+  workflows        Workflow[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([category])
+}
+
+model Version {
+  id           String    @id @default(cuid())
+  documentId   String
+  document     Document  @relation("DocVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  version      Int
+  filename     String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  storageKey   String
+  uploadedById String
+  comment      String?
+  createdAt    DateTime  @default(now())
+  currentFor   Document? @relation("CurrentVersion")
+
+  @@unique([documentId, version])
+  @@index([sha256])
+}
+
+model DocumentAcl {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  // role-based grant
+  role        Role?
+  permission  String // read|write|approve|admin
+  grantedById String
+  createdAt   DateTime @default(now())
+
+  @@unique([documentId, userId, permission])
+  @@unique([documentId, role, permission])
+}
+
+model WorkflowTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  steps     Json // [{order, name, role, requiredApprovals}]
+  createdAt DateTime @default(now())
+}
+
+model Workflow {
+  id          String         @id @default(cuid())
+  documentId  String
+  document    Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  templateId  String?
+  status      WorkflowStatus @default(PENDING)
+  startedById String
+  startedAt   DateTime       @default(now())
+  completedAt DateTime?
+  steps       WorkflowStep[]
+}
+
+model WorkflowStep {
+  id                String             @id @default(cuid())
+  workflowId        String
+  workflow          Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  order             Int
+  name              String
+  role              Role
+  requiredApprovals Int                @default(1)
+  decision          StepDecision       @default(PENDING)
+  assigneeId        String?
+  assignee          User?              @relation("Assignee", fields: [assigneeId], references: [id])
+  decisionsList     WorkflowDecision[]
+
+  @@unique([workflowId, order])
+}
+
+model WorkflowDecision {
+  id        String       @id @default(cuid())
+  stepId    String
+  step      WorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  decision  StepDecision
+  comment   String?
+  decidedAt DateTime     @default(now())
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String // doc.create|doc.download|doc.delete|wf.approve|...
+  targetType String
+  targetId   String
+  metadata   Json?
+  ip         String?
+  userAgent  String?
+  prevHash   String?
+  hash       String
+  createdAt  DateTime @default(now())
+
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
